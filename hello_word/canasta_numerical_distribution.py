@@ -4,6 +4,7 @@ import pandas as pd
 import sqlalchemy
 from tensorflow import keras
 import tensorflow as tf
+import matplotlib.pyplot as plt
 
 STRING_ENGINE = "mysql+pymysql://{username}:{password}@{host}:3306/{schema}"
 
@@ -89,8 +90,30 @@ CANALES = {
 
 engine = sqlalchemy.create_engine(STRING_ENGINE.format(**DATABASE))
 
-query = "SELECT ec.anio, " \
-        "ec.ciclo, " \
+
+def plot_history(history):
+  hist = pd.DataFrame(history.history)
+  hist['epoch'] = history.epoch
+
+  plt.figure()
+  plt.xlabel('Epoch')
+  plt.ylabel('Mean Abs Error [MPG]')
+  plt.plot(hist['epoch'], hist['mean_absolute_error'],
+           label='Train Error')
+  plt.ylim([0, 5])
+  plt.legend()
+
+  plt.figure()
+  plt.xlabel('Epoch')
+  plt.ylabel('Mean Square Error [$MPG^2$]')
+  plt.plot(hist['epoch'], hist['mean_squared_error'],
+           label='Train Error')
+  plt.ylim([0, 20])
+  plt.legend()
+  plt.show()
+
+
+query = "SELECT CAST(CONCAT(ec.anio, ec.ciclo) AS INT) as ciclo, " \
         "ec.area_metropolitana, " \
         "ec.ciudad, " \
         "ec.localidad, " \
@@ -115,19 +138,32 @@ def norm(x):
   return (x - train_stats['mean']) / train_stats['std']
 
 
-normed_train_data = norm(train_dataset)
-normed_test_data = norm(test_dataset)
+xs = norm(train_dataset).values[:, 0:6]
+ys = norm(train_dataset).values[:, 6]
 
 model = keras.Sequential([
-  keras.layers.Dense(len(train_dataset.keys()),
-                     input_dim=[len(train_dataset.keys())],
+  keras.layers.Dense(6,
+                     input_shape=[6],
                      activation=tf.nn.relu),
-  keras.layers.Dense(len(train_dataset.keys()),
+  keras.layers.Dense(49,
+                     activation=tf.nn.relu),
+  keras.layers.Dense(20,
                      activation=tf.nn.relu),
   keras.layers.Dense(1)
 ])
 
 model.compile(optimizer=keras.optimizers.RMSprop(0.001),
-              loss=keras.losses.MeanSquaredError())
-print(model.summary())
-model.fit(normed_train_data, epochs=10, verbose=1)
+              loss=keras.losses.MeanSquaredError(),
+              metrics=['mean_squared_error',
+                       'mean_absolute_error',
+                       'accuracy'])
+
+history = model.fit(xs,
+                    ys,
+                    epochs=10,
+                    workers=4,
+                    use_multiprocessing=True,
+                    verbose=1)
+
+plot_history(history)
+
